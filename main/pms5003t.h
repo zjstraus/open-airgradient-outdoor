@@ -62,7 +62,10 @@ typedef void *pms5003_handle_t;
     }                                         \
 }
 
-ESP_EVENT_DECLARE_BASE(ESP_PMS5003_EVENT);
+ESP_EVENT_DECLARE_BASE(PMS5003_EVENT);
+typedef enum {
+    PMS5003T_READING
+} pms5003_event_id_t;
 
 pms5003_handle_t pms5003_init(const pms5003_config_t *config);
 esp_err_t pms5003_deinit(pms5003_handle_t pms_handle);
