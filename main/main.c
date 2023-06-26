@@ -4,6 +4,7 @@
 #include "driver/uart.h"
 #include "sdkconfig.h"
 #include "pms5003t.h"
+#include "pms5003_manager.h"
 #include <string.h>
 
 #include <esp_log.h>
@@ -261,17 +262,19 @@ void app_main(void) {
     pms5003_config_t config1 = PMS5003_CONFIG_DEFAULT();
     config1.uart.rx_pin = 0;
     config1.uart.tx_pin = 1;
-    config1.uart.uart_port = 1;
+    config1.uart.uart_port = UART_NUM_1;
 
-    pms5003_handle_t pms5003_handle_1 = pms5003_init(&config1);
-    pms5003_add_handler(pms5003_handle_1, pms5003_event_handler, NULL);
+//    pms5003_handle_t pms5003_handle_1 = pms5003_init(&config1);
+//    pms5003_add_handler(pms5003_handle_1, pms5003_event_handler, NULL);
+
+    pms5003_manager_handle_t pms5003_handle_1 = pms5003_manager_init(&config1, "SENS1");
+
 
     pms5003_config_t config2 = PMS5003_CONFIG_DEFAULT();
-    config2.uart.uart_port = 0;
+    config2.uart.uart_port = UART_NUM_0;
 
-    pms5003_handle_t pms5003_handle_2 = pms5003_init(&config2);
-    pms5003_add_handler(pms5003_handle_2, pms5003_event_handler, NULL);
-
-
+//    pms5003_handle_t pms5003_handle_2 = pms5003_init(&config2);
+//    pms5003_add_handler(pms5003_handle_2, pms5003_event_handler, NULL);
+    pms5003_manager_handle_t pms5003_handle_2 = pms5003_manager_init(&config2, "SENS0");
     vTaskDelay(10000 / portTICK_PERIOD_MS);
 }

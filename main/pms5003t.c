@@ -14,11 +14,17 @@
 
 #define PMS5003_RUNTIME_PARSE_BUFFER_SIZE (2)
 #define PMS5003_UART_RX_BUFFER_SIZE (256)
-#define PMS5003_UART_TX_BUFFER_SIZE (256)
+#define PMS5003_UART_TX_BUFFER_SIZE (0)
 #define PMS5003_EVENT_LOOP_QUEUE_SIZE (8)
 
 static const char *PMS5003_TAG = "PMS5003_parser";
 ESP_EVENT_DEFINE_BASE(PMS5003_EVENT);
+
+const uint8_t PMS5003_CMD_READ[7] = {0x42, 0x4D, 0xE2, 0x00, 0x00, 0x01, 0x71};
+const uint8_t PMS5003_CMD_WAKE[7] = {0x42, 0x4D, 0xE4, 0x00, 0x01, 0x01, 0x74};
+const uint8_t PMS5003_CMD_SLEEP[7] = {0x42, 0x4D, 0xE4, 0x00, 0x00, 0x01, 0x73};
+const uint8_t PMS5003_CMD_PASSIVE[7] = {0x42, 0x4D, 0xE1, 0x00, 0x00, 0x01, 0x70};
+const uint8_t PMS5003_CMD_ACTIVE[7] = {0x42, 0x4D, 0xE1, 0x00, 0x01, 0x01, 0x71};
 
 typedef struct {
     uart_port_t uart_port;
@@ -32,6 +38,9 @@ typedef struct {
     uint16_t message_len;
     int field_index;
     pms5003T_reading_t reading;
+
+    pms5003_mode_t mode;
+    pms5003_sleep_t sleep;
 
 } pms5003_runtime_t;
 
@@ -174,6 +183,9 @@ pms5003_handle_t pms5003_init(const pms5003_config_t *config) {
         goto error_struct;
     }
 
+    pms5003_runtime->sleep = SLEEP_AWAKE;
+    pms5003_runtime->mode = MODE_ACTIVE;
+
     pms5003_runtime->buffer = calloc(1, PMS5003_RUNTIME_PARSE_BUFFER_SIZE);
     if (!pms5003_runtime->buffer) {
         ESP_LOGE(PMS5003_TAG, "calloc for pms5003 runtime buffer failed");
@@ -259,4 +271,44 @@ esp_err_t pms5003_add_handler(pms5003_handle_t pms_handle, esp_event_handler_t e
 esp_err_t pms5003_remove_handler(pms5003_handle_t pms_handle, esp_event_handler_t event_handler) {
     pms5003_runtime_t *pms5003_runtime = (pms5003_runtime_t *)pms_handle;
     return esp_event_handler_unregister_with(pms5003_runtime->event_loop_handle, PMS5003_EVENT, ESP_EVENT_ANY_ID, event_handler);
+}
+
+void pms5003_request_read(pms5003_handle_t pms_handle) {
+    pms5003_runtime_t *pms5003_runtime = (pms5003_runtime_t *)pms_handle;
+    int write = uart_write_bytes(pms5003_runtime->uart_port, &PMS5003_CMD_READ, sizeof(PMS5003_CMD_READ));
+    ESP_EARLY_LOGI(PMS5003_TAG, "reading uart %d %d", pms5003_runtime->uart_port, write);
+}
+
+void pms5003_request_sleep(pms5003_handle_t pms_handle, pms5003_sleep_t state) {
+    pms5003_runtime_t *pms5003_runtime = (pms5003_runtime_t *)pms_handle;
+    int write;
+    switch(state) {
+        case SLEEP_SLEEP:
+            write = uart_write_bytes(pms5003_runtime->uart_port, &PMS5003_CMD_SLEEP, sizeof(PMS5003_CMD_SLEEP));
+            ESP_EARLY_LOGI(PMS5003_TAG, "sleeping uart %d %d", pms5003_runtime->uart_port, write);
+            pms5003_runtime->sleep = SLEEP_SLEEP;
+            break;
+        case SLEEP_AWAKE:
+            write = uart_write_bytes(pms5003_runtime->uart_port, &PMS5003_CMD_WAKE, sizeof(PMS5003_CMD_WAKE));
+            ESP_EARLY_LOGI(PMS5003_TAG, "waking uart %d %d", pms5003_runtime->uart_port, write);
+            pms5003_runtime->sleep = SLEEP_AWAKE;
+            break;
+    }
+}
+
+void pms5003_request_mode(pms5003_handle_t pms_handle, pms5003_mode_t mode) {
+    pms5003_runtime_t *pms5003_runtime = (pms5003_runtime_t *)pms_handle;
+    int write;
+    switch (mode) {
+        case MODE_ACTIVE:
+            write = uart_write_bytes(pms5003_runtime->uart_port, &PMS5003_CMD_ACTIVE, sizeof(PMS5003_CMD_ACTIVE));
+            ESP_EARLY_LOGI(PMS5003_TAG, "activing uart %d %d", pms5003_runtime->uart_port, write);
+            pms5003_runtime->mode = MODE_ACTIVE;
+            break;
+        case MODE_PASSIVE:
+            write = uart_write_bytes(pms5003_runtime->uart_port, &PMS5003_CMD_PASSIVE, sizeof(PMS5003_CMD_PASSIVE));
+            ESP_EARLY_LOGI(PMS5003_TAG, "passiving uart %d %d", pms5003_runtime->uart_port, write);
+            pms5003_runtime->mode = MODE_PASSIVE;
+            break;
+    }
 }

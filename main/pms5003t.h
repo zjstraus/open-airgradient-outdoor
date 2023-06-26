@@ -1,3 +1,6 @@
+#ifndef H_PMS5003T
+#define H_PMS5003T
+
 #include "esp_types.h"
 #include "esp_event.h"
 #include "esp_err.h"
@@ -68,6 +71,13 @@ typedef enum {
 } pms5003_event_id_t;
 
 pms5003_handle_t pms5003_init(const pms5003_config_t *config);
+
+void pms5003_request_read(pms5003_handle_t pms_handle);
+void pms5003_request_sleep(pms5003_handle_t pms_handle, pms5003_sleep_t state);
+void pms5003_request_mode(pms5003_handle_t pms_handle, pms5003_mode_t mode);
+
 esp_err_t pms5003_deinit(pms5003_handle_t pms_handle);
 esp_err_t pms5003_add_handler(pms5003_handle_t pms_handle, esp_event_handler_t event_handler, void *handler_args);
 esp_err_t pms5003_remove_handler(pms5003_handle_t pms_handle, esp_event_handler_t event_handler);
+
+#endif
