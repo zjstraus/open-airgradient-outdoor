@@ -32,6 +32,7 @@
 
 #include "pms5003t.h"
 #include "pms5003_manager.h"
+#include "stats_collector.h"
 
 static const char *TAG = "openair_outdoor";
 
@@ -188,6 +189,10 @@ void app_main(void) {
     }
 
     wifi_init_sta();
+
+    #ifdef configUSE_TRACE_FACILITY
+    stats_collector_init(NULL);
+    #endif
 
     pms5003_config_t config1 = PMS5003_CONFIG_DEFAULT();
     config1.uart.rx_pin = 0;
