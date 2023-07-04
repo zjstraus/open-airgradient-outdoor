@@ -59,6 +59,25 @@ menu "Airgradient Configuration"
         endchoice
     endmenu
 
+    menu "MQTT"
+        config MQTT_TARGET_URL
+            string "Broker URL"
+            default "mqtt://mqtt.eclipseprojects.io"
+            help
+                URL of the broker to connect to
+
+        config MQTT_USERNAME
+            string "MQTT username"
+
+        config MQTT_PASSOWRD
+            string "MQTT password"
+
+        config MQTT_BASE_PATH
+            string "MQTT message base path"
+            default "airgradient/outdoor/"
+
+    endmenu
+
     menu "PMS5003 Driver"
         config PMS5003_UART_EVENT_QUEUE_LEN
             int "UART event queue length"

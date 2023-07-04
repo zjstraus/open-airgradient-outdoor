@@ -33,6 +33,7 @@
 #include "pms5003t.h"
 #include "pms5003_manager.h"
 #include "stats_collector.h"
+#include "mqtt_client.h"
 
 static const char *TAG = "openair_outdoor";
 
@@ -73,6 +74,7 @@ static const char *TAG = "openair_outdoor";
 #define WIFI_FAIL_EVENT BIT1
 
 static EventGroupHandle_t wifi_event_group;
+static esp_mqtt_client_handle_t mqtt_client;
 
 static int wifi_retry_count = 0;
 
@@ -150,27 +152,124 @@ void wifi_init_sta(void) {
     }
 }
 
+
+static void log_error_if_nonzero(const char *message, int error_code)
+{
+    if (error_code != 0) {
+        ESP_LOGE(TAG, "Last error %s: 0x%x", message, error_code);
+    }
+}
+
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
+{
+    ESP_LOGD(TAG, "Event dispatched from event loop base=%s, event_id=%" PRIi32 "", base, event_id);
+    esp_mqtt_event_handle_t event = event_data;
+    esp_mqtt_client_handle_t client = event->client;
+    int msg_id;
+    switch ((esp_mqtt_event_id_t)event_id) {
+        case MQTT_EVENT_CONNECTED:
+            ESP_LOGI(TAG, "MQTT Connected");
+            break;
+        case MQTT_EVENT_DISCONNECTED:
+            ESP_LOGI(TAG, "MQTT Disconnected");
+            break;
+
+        case MQTT_EVENT_SUBSCRIBED:
+            ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+            break;
+        case MQTT_EVENT_UNSUBSCRIBED:
+            ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
+            break;
+        case MQTT_EVENT_PUBLISHED:
+            ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+            break;
+        case MQTT_EVENT_DATA:
+            ESP_LOGI(TAG, "MQTT_EVENT_DATA");
+            break;
+        case MQTT_EVENT_ERROR:
+            ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
+            if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
+                log_error_if_nonzero("reported from esp-tls", event->error_handle->esp_tls_last_esp_err);
+                log_error_if_nonzero("reported from tls stack", event->error_handle->esp_tls_stack_err);
+                log_error_if_nonzero("captured as transport's socket errno",  event->error_handle->esp_transport_sock_errno);
+                ESP_LOGI(TAG, "Last errno string (%s)", strerror(event->error_handle->esp_transport_sock_errno));
+            }
+            break;
+        default:
+            ESP_LOGI(TAG, "Other MQTT event id:%d", event->event_id);
+            break;
+    }
+}
+
+static void mqtt_init()
+{
+    esp_mqtt_client_config_t mqtt_config = {
+            .broker.address.uri = CONFIG_MQTT_TARGET_URL,
+            .credentials.username = CONFIG_MQTT_USERNAME,
+            .credentials.authentication.password = CONFIG_MQTT_PASSOWRD,
+    };
+
+    mqtt_client = esp_mqtt_client_init(&mqtt_config);
+    esp_mqtt_client_register_event(mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
+    esp_mqtt_client_start(mqtt_client);
+}
+
+static char *mqtt_topic_buffer[256];
+static char *mqtt_payload_buffer[256];
 static void sensor_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     if (event_base == PMS5003_MANAGER_EVENT) {
         switch (event_id) {
             case PMS5003T_MANAGER_READING:
                 pms5003T_reading_t * pms5003T_reading = (pms5003T_reading_t *) event_data;
-                ESP_EARLY_LOGI("main",
-                               "%s - Standard (1.0: %d, 2.5: %d, 10.0: %d) Atmospheric (1.0: %d, 2.5: %d, 10.0: %d) Raw (0.3: %d, 0.5: %d, 1.0: %d, 2.5: %d) %d C %d %% %d",
-                               pms5003T_reading->sensor_id,
-                               pms5003T_reading->standard.pm_1_0,
-                               pms5003T_reading->standard.pm_2_5,
-                               pms5003T_reading->standard.pm_10_0,
-                               pms5003T_reading->atmospheric.pm_1_0,
-                               pms5003T_reading->atmospheric.pm_2_5,
-                               pms5003T_reading->atmospheric.pm_10_0,
-                               pms5003T_reading->raw_pm_0_3,
-                               pms5003T_reading->raw_pm_0_5,
-                               pms5003T_reading->raw_pm_1_0,
-                               pms5003T_reading->raw_pm_2_5,
-                               pms5003T_reading->temperature,
-                               pms5003T_reading->humidity,
-                               pms5003T_reading->voc);
+
+                sprintf(mqtt_topic_buffer, "%s%s/temperature", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%f", (pms5003T_reading->temperature / 10.0));
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/humidity", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%f", (pms5003T_reading->humidity / 10.0));
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/raw/0.3", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%d", pms5003T_reading->raw_pm_0_3);
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/raw/0.5", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%d", pms5003T_reading->raw_pm_0_5);
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/raw/1.0", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%d", pms5003T_reading->raw_pm_1_0);
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/raw/2.5", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%d", pms5003T_reading->raw_pm_2_5);
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/standard/pm1.0", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%d", pms5003T_reading->standard.pm_1_0);
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/standard/pm2.5", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%d", pms5003T_reading->standard.pm_2_5);
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/standard/pm10.0", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%d", pms5003T_reading->standard.pm_10_0);
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/atmospheric/pm1.0", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%d", pms5003T_reading->atmospheric.pm_1_0);
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/atmospheric/pm2.5", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%d", pms5003T_reading->atmospheric.pm_2_5);
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
+                sprintf(mqtt_topic_buffer, "%s%s/atmospheric/pm10.0", CONFIG_MQTT_BASE_PATH, pms5003T_reading->sensor_id);
+                sprintf(mqtt_payload_buffer, "%d", pms5003T_reading->atmospheric.pm_10_0);
+                esp_mqtt_client_enqueue(mqtt_client, mqtt_topic_buffer, mqtt_payload_buffer, 0, 0, 0, true);
+
                 break;
         }
     }
@@ -189,6 +288,7 @@ void app_main(void) {
     }
 
     wifi_init_sta();
+    mqtt_init();
 
     esp_event_loop_args_t event_loop_args = {
             .queue_size = 32,
