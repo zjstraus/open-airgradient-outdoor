@@ -34,6 +34,8 @@
 #define PMS5003_UART_TX_BUFFER_SIZE (0)
 #define PMS5003_EVENT_LOOP_QUEUE_SIZE (8)
 
+#define PMS5003_HEADER_SCAN_ATTEMPTS (33)
+
 static const char *PMS5003_TAG = "PMS5003_parser";
 ESP_EVENT_DEFINE_BASE(PMS5003_EVENT);
 
@@ -53,6 +55,7 @@ typedef struct {
     int read_len;
     uint16_t checksum;
     uint16_t message_len;
+    int header_scan_attempts;
     int field_index;
     pms5003T_reading_t reading;
 
@@ -61,97 +64,111 @@ typedef struct {
 
 } pms5003_runtime_t;
 
-static void pms5003_read_measurement(pms5003_runtime_t *pms5003_runtime) {
-    pms5003_runtime->read_len = uart_read_bytes(pms5003_runtime->uart_port, pms5003_runtime->buffer, 1, 100 / portTICK_PERIOD_MS);
-    if (pms5003_runtime->read_len && pms5003_runtime->buffer[0] == 0x42) {
-        //check = 0x42;
+static int pms5003_read_measurement(pms5003_runtime_t *pms5003_runtime) {
+    pms5003_runtime->header_scan_attempts = 0;
+    while (pms5003_runtime->header_scan_attempts < PMS5003_HEADER_SCAN_ATTEMPTS) {
         pms5003_runtime->read_len = uart_read_bytes(pms5003_runtime->uart_port, pms5003_runtime->buffer, 1, 100 / portTICK_PERIOD_MS);
-        if (pms5003_runtime->read_len && pms5003_runtime->buffer[0] == 0x4d) {
-            //check += 0x4d;
-            pms5003_runtime->read_len = uart_read_bytes(pms5003_runtime->uart_port, pms5003_runtime->buffer, 2,
-                                                        100 / portTICK_PERIOD_MS);
-            if (pms5003_runtime->read_len == 2) {
-                //check += data[0];
-                //check += data[1];
-                pms5003_runtime->message_len = (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                pms5003_runtime->field_index = 0;
-                pms5003_runtime->checksum = 0;
-                while (pms5003_runtime->message_len > 2) {
-                    pms5003_runtime->read_len = uart_read_bytes(pms5003_runtime->uart_port, pms5003_runtime->buffer, 2,
-                                                                100 / portTICK_PERIOD_MS);
-                    if (pms5003_runtime->read_len) {
-                        pms5003_runtime->checksum += pms5003_runtime->buffer[0];
-                        pms5003_runtime->checksum += pms5003_runtime->buffer[1];
-                        switch (pms5003_runtime->field_index) {
-                            case 0:
-                                pms5003_runtime->reading.standard.pm_1_0 =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 1:
-                                pms5003_runtime->reading.standard.pm_2_5 =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 2:
-                                pms5003_runtime->reading.standard.pm_10_0 =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 3:
-                                pms5003_runtime->reading.atmospheric.pm_1_0 =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 4:
-                                pms5003_runtime->reading.atmospheric.pm_2_5 =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 5:
-                                pms5003_runtime->reading.atmospheric.pm_10_0 =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 6:
-                                pms5003_runtime->reading.raw_pm_0_3 =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 7:
-                                pms5003_runtime->reading.raw_pm_0_5 =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 8:
-                                pms5003_runtime->reading.raw_pm_1_0 =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 9:
-                                pms5003_runtime->reading.raw_pm_2_5 =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 10:
-                                pms5003_runtime->reading.temperature =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 11:
-                                pms5003_runtime->reading.humidity =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                            case 12:
-                                pms5003_runtime->reading.voc =
-                                        (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
-                                break;
-                        }
-                        pms5003_runtime->field_index++;
+        if (pms5003_runtime->read_len && pms5003_runtime->buffer[0] == 0x42) {
+            pms5003_runtime->checksum = 0x42;
+            break;
+        }
+        pms5003_runtime->header_scan_attempts++;
+    }
 
-                    }
-                    pms5003_runtime->message_len -= 2;
-                }
+    if (pms5003_runtime->header_scan_attempts >= PMS5003_HEADER_SCAN_ATTEMPTS) {
+        return -1;
+    }
+
+    pms5003_runtime->read_len = uart_read_bytes(pms5003_runtime->uart_port, pms5003_runtime->buffer, 1, 100 / portTICK_PERIOD_MS);
+    if (pms5003_runtime->read_len && pms5003_runtime->buffer[0] == 0x4d) {
+        pms5003_runtime->checksum += 0x4d;
+        pms5003_runtime->read_len = uart_read_bytes(pms5003_runtime->uart_port, pms5003_runtime->buffer, 2,
+                                                    100 / portTICK_PERIOD_MS);
+        if (pms5003_runtime->read_len == 2) {
+            pms5003_runtime->checksum += pms5003_runtime->buffer[0];
+            pms5003_runtime->checksum += pms5003_runtime->buffer[1];
+            pms5003_runtime->message_len = (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+            pms5003_runtime->field_index = 0;
+            while (pms5003_runtime->message_len > 2) {
                 pms5003_runtime->read_len = uart_read_bytes(pms5003_runtime->uart_port, pms5003_runtime->buffer, 2,
                                                             100 / portTICK_PERIOD_MS);
                 if (pms5003_runtime->read_len) {
-                    pms5003_runtime->checksum -= pms5003_runtime->buffer[0] << 0;
-                    pms5003_runtime->checksum -= pms5003_runtime->buffer[1];
+                    pms5003_runtime->checksum += pms5003_runtime->buffer[0];
+                    pms5003_runtime->checksum += pms5003_runtime->buffer[1];
+                    switch (pms5003_runtime->field_index) {
+                        case 0:
+                            pms5003_runtime->reading.standard.pm_1_0 =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 1:
+                            pms5003_runtime->reading.standard.pm_2_5 =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 2:
+                            pms5003_runtime->reading.standard.pm_10_0 =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 3:
+                            pms5003_runtime->reading.atmospheric.pm_1_0 =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 4:
+                            pms5003_runtime->reading.atmospheric.pm_2_5 =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 5:
+                            pms5003_runtime->reading.atmospheric.pm_10_0 =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 6:
+                            pms5003_runtime->reading.raw_pm_0_3 =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 7:
+                            pms5003_runtime->reading.raw_pm_0_5 =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 8:
+                            pms5003_runtime->reading.raw_pm_1_0 =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 9:
+                            pms5003_runtime->reading.raw_pm_2_5 =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 10:
+                            pms5003_runtime->reading.temperature =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 11:
+                            pms5003_runtime->reading.humidity =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                        case 12:
+                            pms5003_runtime->reading.voc =
+                                    (pms5003_runtime->buffer[0] << 8) | pms5003_runtime->buffer[1];
+                            break;
+                    }
+                    pms5003_runtime->field_index++;
+
                 }
-                esp_event_post_to(pms5003_runtime->event_loop_handle, PMS5003_EVENT, PMS5003T_READING,
-                                  &(pms5003_runtime->reading), sizeof(pms5003T_reading_t), 100 / portTICK_PERIOD_MS);
+                pms5003_runtime->message_len -= 2;
             }
+            pms5003_runtime->read_len = uart_read_bytes(pms5003_runtime->uart_port, pms5003_runtime->buffer, 2,
+                                                        100 / portTICK_PERIOD_MS);
+            if (pms5003_runtime->read_len) {
+                pms5003_runtime->checksum -= pms5003_runtime->buffer[0] << 8;
+                pms5003_runtime->checksum -= pms5003_runtime->buffer[1];
+            }
+            if (pms5003_runtime->checksum != 0) {
+                return -2;
+            }
+            esp_event_post_to(pms5003_runtime->event_loop_handle, PMS5003_EVENT, PMS5003T_READING,
+                              &(pms5003_runtime->reading), sizeof(pms5003T_reading_t), 100 / portTICK_PERIOD_MS);
+            return 0;
         }
     }
+    return -3;
 }
 
 static void pms5003_task_entry(void *arg) {
@@ -161,7 +178,10 @@ static void pms5003_task_entry(void *arg) {
         if (xQueueReceive(pms5003_runtime->queue_handle, &event, pdMS_TO_TICKS(1000))) {
             switch (event.type) {
                 case UART_DATA:
-                    pms5003_read_measurement(pms5003_runtime);
+                    int ret = pms5003_read_measurement(pms5003_runtime);
+                    if (ret != 0) {
+                        ESP_LOGW(PMS5003_TAG, "%d - read err %d", pms5003_runtime->uart_port, ret);
+                    }
                     break;
                 case UART_FIFO_OVF:
                     ESP_LOGW(PMS5003_TAG, "%d HW FIFO Overflow", pms5003_runtime->uart_port);
@@ -245,7 +265,7 @@ pms5003_handle_t pms5003_init(const pms5003_config_t *config) {
         goto error_events;
     }
 
-    BaseType_t taskErr = xTaskCreate(pms5003_task_entry, "PMS5003_sensor", configMINIMAL_STACK_SIZE, pms5003_runtime,
+    BaseType_t taskErr = xTaskCreate(pms5003_task_entry, "PMS5003_sensor", 2048, pms5003_runtime,
                                      2, &pms5003_runtime->task_handle);
 
     if (taskErr != pdTRUE) {
