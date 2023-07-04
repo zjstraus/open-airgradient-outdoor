@@ -18,9 +18,13 @@
 #include "pms5003_manager.h"
 #include "pms5003t.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
 
 
-#define PMS5003_MANAGER_READCOUNT (10)
+
+#define PMS5003_MANAGER_READCOUNT CONFIG_PMS5003_MANAGER_READ_COUNT
+#define PMS5003_MANAGER_SPINUP_TICKS (CONFIG_PMS5003_MANAGER_SPINUP_TIME * 1000) / portTICK_PERIOD_MS
+#define PMS5003_MANAGER_SLEEP_TICKS (CONFIG_PMS5003_MANAGER_SLEEP_TIME * 1000) / portTICK_PERIOD_MS
 
 static const char *PMS5003_MANAGER_TAG = "PMS5003_manager";
 ESP_EVENT_DEFINE_BASE(PMS5003_MANAGER_EVENT);
@@ -85,7 +89,7 @@ static void pms5003_manager_task_entry(void *arg) {
     pms5003_manager_runtime_t *runtime = (pms5003_manager_runtime_t *)arg;
     while (1) {
         pms5003_request_sleep(runtime->sensor_handle, SLEEP_AWAKE);
-        vTaskDelay((30 * 1000) / portTICK_PERIOD_MS);
+        vTaskDelay(PMS5003_MANAGER_SPINUP_TICKS);
         pms5003_manager_clear_pending_reads(runtime);
         while (runtime->remaining_reads > 0) {
             runtime->read_pending = true;
@@ -124,7 +128,7 @@ static void pms5003_manager_task_entry(void *arg) {
                        runtime->pending_reading.humidity,
                        runtime->pending_reading.voc);
         pms5003_request_sleep(runtime->sensor_handle, SLEEP_SLEEP);
-        vTaskDelay((260 * 1000) / portTICK_PERIOD_MS);
+        vTaskDelay(PMS5003_MANAGER_SLEEP_TICKS);
     }
 }
 
