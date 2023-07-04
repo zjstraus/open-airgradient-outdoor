@@ -15,44 +15,58 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef H_PMS5003T
-#define H_PMS5003T
+#pragma once
 
 #include "esp_types.h"
 #include "esp_event.h"
 #include "esp_err.h"
 #include "driver/uart.h"
 
+/**
+ * Particle concentrations in ug/m3
+ */
 typedef struct {
-    uint16_t pm_1_0;
-    uint16_t pm_2_5;
-    uint16_t pm_10_0;
+    uint16_t pm_1_0; /*!< PM1.0 */
+    uint16_t pm_2_5; /*!< PM2.5 */
+    uint16_t pm_10_0; /*!< PM10.0 */
 } pms5003_concentration_t;
 
+/**
+ * Individual reading off the sensor
+ */
 typedef struct {
-    pms5003_concentration_t standard;
-    pms5003_concentration_t atmospheric;
+    pms5003_concentration_t standard; /*!< Concentration at standard particle */
+    pms5003_concentration_t atmospheric; /*!< Concentration under atmospheric conditions */
 
-    uint16_t raw_pm_0_3;
-    uint16_t raw_pm_0_5;
-    uint16_t raw_pm_1_0;
-    uint16_t raw_pm_2_5;
+    uint16_t raw_pm_0_3; /*!< Raw number of particles larger than 0.3um in 0.1L of air */
+    uint16_t raw_pm_0_5; /*!< Raw number of particles larger than 0.5um in 0.1L of air */
+    uint16_t raw_pm_1_0; /*!< Raw number of particles larger than 1.0um in 0.1L of air */
+    uint16_t raw_pm_2_5; /*!< Raw number of particles larger than 2.5um in 0.1L of air */
 
-    int16_t temperature;
-    uint16_t humidity;
-    uint16_t voc;
+    int16_t temperature; /*!< Temperature (in tenths of a degree C) */
+    uint16_t humidity; /*!< Relative Humidity (in tenths of a percent) */
+    uint16_t voc; /*!< */
 } pms5003T_reading_t;
 
+/**
+ * Operation mode of the sensor
+ */
 typedef enum {
-    MODE_ACTIVE,
-    MODE_PASSIVE
+    MODE_ACTIVE, /*!< Sensor will automatically send a reading every second, default at startup */
+    MODE_PASSIVE /*!< Sensor must be polled for data */
 } pms5003_mode_t;
 
+/**
+ * Sleep state of the sensor
+ */
 typedef enum {
-    SLEEP_AWAKE,
-    SLEEP_SLEEP
+    SLEEP_AWAKE, /*!< Sensor is active (fan is on), default at startup */
+    SLEEP_SLEEP /*!< Sensor is asleep (fan is off) */
 } pms5003_sleep_t;
 
+/**
+ * Target PMS5003T sensor configuration
+ */
 typedef struct {
     struct {
         uart_port_t uart_port;
@@ -66,7 +80,6 @@ typedef struct {
     } uart;
 } pms5003_config_t;
 
-typedef void *pms5003_handle_t;
 
 #define PMS5003_CONFIG_DEFAULT()              \
 {                                             \
@@ -83,18 +96,69 @@ typedef void *pms5003_handle_t;
 }
 
 ESP_EVENT_DECLARE_BASE(PMS5003_EVENT);
+
+/**
+ * Incoming events from the sensor
+ */
 typedef enum {
-    PMS5003T_READING
+    PMS5003T_READING /*!< New reading has arrived */
 } pms5003_event_id_t;
 
+/**
+ * Pointer to an initialized PMS5003 driver instance
+ */
+typedef void *pms5003_handle_t;
+
+/**
+ * @brief Do memory allocations and initial setup for a sensor connection
+ * @param config connection configuration
+ * @return pointer to PMS5003T instance
+ */
 pms5003_handle_t pms5003_init(const pms5003_config_t *config);
 
+/**
+ * @brief In passive mode, send a message prompting the sensor for a new reading
+ * @param pms_handle pointer to PMS5003T instance
+ */
 void pms5003_request_read(pms5003_handle_t pms_handle);
+
+/**
+ * @brief Send a sleep state change message to the sensor
+ * @details Sensor data readings will not be valid while in sleep mode or for 30s after waking
+ * @param pms_handle pointer to PMS5003T instance
+ * @param state sleep state to request
+ */
 void pms5003_request_sleep(pms5003_handle_t pms_handle, pms5003_sleep_t state);
+
+/**
+ * @brief Send a mode change message to the sensor
+ * @param pms_handle pointer to PMS5003T instance
+ * @param mode operational mode to request
+ */
 void pms5003_request_mode(pms5003_handle_t pms_handle, pms5003_mode_t mode);
 
+/**
+ * @brief Clear and clean up any allocations made for sensor instance
+ * @param pms_handle pointer to PMS5003T instance
+ * @return
+ *  - ESP_OK: free'd sucessfully
+ *  - other: failure cleaning up OS construct(s)
+ */
 esp_err_t pms5003_deinit(pms5003_handle_t pms_handle);
-esp_err_t pms5003_add_handler(pms5003_handle_t pms_handle, esp_event_handler_t event_handler, void *handler_args);
-esp_err_t pms5003_remove_handler(pms5003_handle_t pms_handle, esp_event_handler_t event_handler);
 
-#endif
+/**
+ * @brief Attach a handler to the event loop for sensor readings
+ * @param pms_handle pointer to PMS5003T instance
+ * @param event_handler handler function
+ * @param handler_args additional args to pass along with event to handler
+ * @return passed through from esp_event_handler_register_with
+ */
+esp_err_t pms5003_add_handler(pms5003_handle_t pms_handle, esp_event_handler_t event_handler, void *handler_args);
+
+/**
+ * @brief Deattach a handler from the event loop
+ * @param pms_handle pointer to PMS5003T instance
+ * @param event_handler handler function
+ * @return passed through from esp_event_handler_unregister_with
+ */
+esp_err_t pms5003_remove_handler(pms5003_handle_t pms_handle, esp_event_handler_t event_handler);
