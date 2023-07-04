@@ -150,27 +150,27 @@ void wifi_init_sta(void) {
     }
 }
 
-static void pms5003_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
-    pms5003T_reading_t *pms5003T_reading = NULL;
-    if (event_base == PMS5003_EVENT) {
+static void sensor_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    if (event_base == PMS5003_MANAGER_EVENT) {
         switch (event_id) {
-            case PMS5003T_READING:
-                pms5003T_reading = (pms5003T_reading_t *) event_data;
-//                ESP_EARLY_LOGI("main",
-//                               "Standard (1.0: %d, 2.5: %d, 10.0: %d) Atmospheric (1.0: %d, 2.5: %d, 10.0: %d) Raw (0.3: %d, 0.5: %d, 1.0: %d, 2.5: %d) %d C %d %% %d",
-//                               pms5003T_reading->standard.pm_1_0,
-//                               pms5003T_reading->standard.pm_2_5,
-//                               pms5003T_reading->standard.pm_10_0,
-//                               pms5003T_reading->atmospheric.pm_1_0,
-//                               pms5003T_reading->atmospheric.pm_2_5,
-//                               pms5003T_reading->atmospheric.pm_10_0,
-//                               pms5003T_reading->raw_pm_0_3,
-//                               pms5003T_reading->raw_pm_0_5,
-//                               pms5003T_reading->raw_pm_1_0,
-//                               pms5003T_reading->raw_pm_2_5,
-//                               pms5003T_reading->temperature,
-//                               pms5003T_reading->humidity,
-//                               pms5003T_reading->voc);
+            case PMS5003T_MANAGER_READING:
+                pms5003T_reading_t * pms5003T_reading = (pms5003T_reading_t *) event_data;
+                ESP_EARLY_LOGI("main",
+                               "%s - Standard (1.0: %d, 2.5: %d, 10.0: %d) Atmospheric (1.0: %d, 2.5: %d, 10.0: %d) Raw (0.3: %d, 0.5: %d, 1.0: %d, 2.5: %d) %d C %d %% %d",
+                               pms5003T_reading->sensor_id,
+                               pms5003T_reading->standard.pm_1_0,
+                               pms5003T_reading->standard.pm_2_5,
+                               pms5003T_reading->standard.pm_10_0,
+                               pms5003T_reading->atmospheric.pm_1_0,
+                               pms5003T_reading->atmospheric.pm_2_5,
+                               pms5003T_reading->atmospheric.pm_10_0,
+                               pms5003T_reading->raw_pm_0_3,
+                               pms5003T_reading->raw_pm_0_5,
+                               pms5003T_reading->raw_pm_1_0,
+                               pms5003T_reading->raw_pm_2_5,
+                               pms5003T_reading->temperature,
+                               pms5003T_reading->humidity,
+                               pms5003T_reading->voc);
                 break;
         }
     }
@@ -190,7 +190,20 @@ void app_main(void) {
 
     wifi_init_sta();
 
-    #ifdef configUSE_TRACE_FACILITY
+    esp_event_loop_args_t event_loop_args = {
+            .queue_size = 32,
+            .task_name = NULL
+    };
+    esp_event_loop_handle_t main_events;
+    if (esp_event_loop_create(&event_loop_args, &main_events) != ESP_OK) {
+        ESP_LOGE(TAG, "main event loop creation failed");
+        esp_restart();
+    }
+
+    esp_event_handler_register_with(main_events, ESP_EVENT_ANY_BASE, ESP_EVENT_ANY_ID,
+                                    sensor_event_handler, NULL);
+
+    #if configUSE_TRACE_FACILITY
     stats_collector_init(NULL);
     #endif
 
@@ -202,7 +215,7 @@ void app_main(void) {
 //    pms5003_handle_t pms5003_handle_1 = pms5003_init(&config1);
 //    pms5003_add_handler(pms5003_handle_1, pms5003_event_handler, NULL);
 
-    pms5003_manager_handle_t pms5003_handle_1 = pms5003_manager_init(&config1, "SENS1");
+    pms5003_manager_handle_t pms5003_handle_1 = pms5003_manager_init(&config1, "SENS1", main_events);
 
 
     pms5003_config_t config2 = PMS5003_CONFIG_DEFAULT();
@@ -210,6 +223,9 @@ void app_main(void) {
 
 //    pms5003_handle_t pms5003_handle_2 = pms5003_init(&config2);
 //    pms5003_add_handler(pms5003_handle_2, pms5003_event_handler, NULL);
-    pms5003_manager_handle_t pms5003_handle_2 = pms5003_manager_init(&config2, "SENS0");
-    vTaskDelay(10000 / portTICK_PERIOD_MS);
+    pms5003_manager_handle_t pms5003_handle_2 = pms5003_manager_init(&config2, "SENS0", main_events);
+
+    while (1) {
+        esp_event_loop_run(main_events, pdMS_TO_TICKS(50));
+    }
 }

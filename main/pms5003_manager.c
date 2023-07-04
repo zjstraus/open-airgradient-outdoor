@@ -36,6 +36,8 @@ typedef struct {
     bool read_pending;
     TaskHandle_t task_handle;
     char *TAG;
+
+    esp_event_loop_handle_t event_target;
 } pms5003_manager_runtime_t;
 
 static void pms5003_manager_clear_pending_reads(pms5003_manager_runtime_t *runtime) {
@@ -54,6 +56,7 @@ static void pms5003_manager_clear_pending_reads(pms5003_manager_runtime_t *runti
     runtime->pending_reading.atmospheric.pm_10_0 = 0;
     runtime->pending_reading.atmospheric.pm_2_5 = 0;
     runtime->pending_reading.atmospheric.pm_1_0 = 0;
+    runtime->pending_reading.sensor_id = runtime->TAG;
 }
 
 static void pms5003_manager_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id,
@@ -112,33 +115,23 @@ static void pms5003_manager_task_entry(void *arg) {
         runtime->pending_reading.atmospheric.pm_2_5 /= PMS5003_MANAGER_READCOUNT;
         runtime->pending_reading.atmospheric.pm_1_0 /= PMS5003_MANAGER_READCOUNT;
 
-        ESP_EARLY_LOGI(runtime->TAG,
-                       "Standard (1.0: %d, 2.5: %d, 10.0: %d) Atmospheric (1.0: %d, 2.5: %d, 10.0: %d) Raw (0.3: %d, 0.5: %d, 1.0: %d, 2.5: %d) %d C %d %% %d",
-                       runtime->pending_reading.standard.pm_1_0,
-                       runtime->pending_reading.standard.pm_2_5,
-                       runtime->pending_reading.standard.pm_10_0,
-                       runtime->pending_reading.atmospheric.pm_1_0,
-                       runtime->pending_reading.atmospheric.pm_2_5,
-                       runtime->pending_reading.atmospheric.pm_10_0,
-                       runtime->pending_reading.raw_pm_0_3,
-                       runtime->pending_reading.raw_pm_0_5,
-                       runtime->pending_reading.raw_pm_1_0,
-                       runtime->pending_reading.raw_pm_2_5,
-                       runtime->pending_reading.temperature,
-                       runtime->pending_reading.humidity,
-                       runtime->pending_reading.voc);
         pms5003_request_sleep(runtime->sensor_handle, SLEEP_SLEEP);
+
+        esp_event_post_to(runtime->event_target, PMS5003_MANAGER_EVENT, PMS5003T_MANAGER_READING,
+                          &(runtime->pending_reading), sizeof(pms5003T_reading_t), 100 / portTICK_PERIOD_MS);
+
         vTaskDelay(PMS5003_MANAGER_SLEEP_TICKS);
     }
 }
 
-pms5003_manager_handle_t pms5003_manager_init(const pms5003_config_t *config, char *TAG) {
+pms5003_manager_handle_t pms5003_manager_init(const pms5003_config_t *config, char *TAG, esp_event_loop_handle_t event_target) {
     pms5003_manager_runtime_t *runtime = calloc(1, sizeof(pms5003_manager_runtime_t));
     if (!runtime) {
         ESP_LOGE(PMS5003_MANAGER_TAG, "calloc for pms5003 manager runtime struct failed");
         goto error_struct;
     }
     runtime->TAG = TAG;
+    runtime->event_target = event_target;
 
     runtime->sensor_handle = pms5003_init(config);
     if (!runtime->sensor_handle) {

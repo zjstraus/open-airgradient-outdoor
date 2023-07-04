@@ -36,6 +36,7 @@ typedef struct {
 } stats_collector_runtime_t;
 
 static void stats_collector_task_entry(void *arg) {
+#if configUSE_TRACE_FACILITY
     stats_collector_runtime_t *runtime = (stats_collector_runtime_t *) arg;
     while (1) {
         vTaskDelay(30000 / portTICK_PERIOD_MS);
@@ -51,10 +52,12 @@ static void stats_collector_task_entry(void *arg) {
                      runtime->task_status_buffer[task_index].ulRunTimeCounter);
         }
     }
+#endif
 }
 
 stats_collector_handle_t stats_collector_init(esp_event_loop_handle_t event_loop)
 {
+#if configUSE_TRACE_FACILITY
     stats_collector_runtime_t *runtime = calloc(1, sizeof(stats_collector_runtime_t));
     if (!runtime) {
         ESP_LOGE(TAG, "calloc for stats_collector runtime struct failed");
@@ -86,5 +89,7 @@ stats_collector_handle_t stats_collector_init(esp_event_loop_handle_t event_loop
     free(runtime->task_status_buffer);
     error_struct:
     free(runtime);
+    return NULL;
+#endif
     return NULL;
 }

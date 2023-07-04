@@ -198,6 +198,7 @@ static int pms5003_read_measurement(pms5003_runtime_t *pms5003_runtime)
             if (pms5003_runtime->checksum != 0) {
                 return -2;
             }
+            pms5003_runtime->reading.sensor_id = NULL;
             esp_event_post_to(pms5003_runtime->event_loop_handle, PMS5003_EVENT, PMS5003T_READING,
                               &(pms5003_runtime->reading), sizeof(pms5003T_reading_t), 100 / portTICK_PERIOD_MS);
             return 0;

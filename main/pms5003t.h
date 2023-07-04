@@ -46,6 +46,8 @@ typedef struct {
     int16_t temperature; /*!< Temperature (in tenths of a degree C) */
     uint16_t humidity; /*!< Relative Humidity (in tenths of a percent) */
     uint16_t voc; /*!< */
+
+    char *sensor_id; /*!< Sensor name to report against */
 } pms5003T_reading_t;
 
 /**

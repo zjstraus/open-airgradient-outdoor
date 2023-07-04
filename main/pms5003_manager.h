@@ -28,6 +28,6 @@ typedef enum {
     PMS5003T_MANAGER_READING
 } pms5003_manager_event_id_t;
 
-pms5003_manager_handle_t pms5003_manager_init(const pms5003_config_t *config, char *TAG);
+pms5003_manager_handle_t pms5003_manager_init(const pms5003_config_t *config, char *TAG, esp_event_loop_handle_t event_target);
 
 #endif
