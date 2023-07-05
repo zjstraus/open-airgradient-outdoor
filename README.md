@@ -1,35 +1,30 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C6 | ESP32-H2 | ESP32-S2 | ESP32-S3 |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | -------- | -------- |
+| Supported Targets | | ESP32-C3 |  |
+|-------------------|-|----------|--| 
 
-# _Sample project_
+# OpenAirgradient Outdoor
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+This is a custom firmware using ESP-IDF to drive the [Airgradient Open Air Outdoor 1.1 kit](https://www.airgradient.com/open-airgradient/instructions/diy-open-air-presoldered-v11/).
 
-This is the simplest buildable example. The example is used by command `idf.py create-project`
-that copies the project to user specified path and set it's name. For more information follow the [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project)
-
+It publishes all data to MQTT and tries to drive the PMS5003 sensors in a way that maximizes lifespan.
 
 
-## How to use example
-We encourage the users to use the example as a template for the new projects.
-A recommended way is to follow the instructions on a [docs page](https://docs.espressif.com/projects/esp-idf/en/latest/api-guides/build-system.html#start-a-new-project).
+## Requirements
+* ESP-IDF 5.1
 
-## Example folder contents
 
-The project **sample_project** contains one source file in C language [main.c](main/main.c). The file is located in folder [main](main).
+## Configuration
+Uses Kconfig to set all configuration at build-time. Run `idf.py menuconfig` and find relevant options under "Airgradient Configuration".
 
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt`
-files that provide set of directives and instructions describing the project's source files and targets
-(executable, library, or both). 
-
-Below is short explanation of remaining files in the project folder.
-
-```
-├── CMakeLists.txt
-├── main
-│   ├── CMakeLists.txt
-│   └── main.c
-└── README.md                  This is the file you are currently reading
-```
-Additionally, the sample project contains Makefile and component.mk files, used for the legacy Make based build system. 
-They are not used or needed when building with CMake and idf.py.
+## MQTT Update structure
+* {configuration base path}/{sensor ID}/temperature - Temperature in deg C
+* {configuration base path}/{sensor ID}/humidity - Relative humidity
+* {configuration base path}/{sensor ID}/raw/0.3 - Number of particles bigger than 0.3um in 0.1L of air
+* {configuration base path}/{sensor ID}/raw/0.5 - Number of particles bigger than 0.5um in 0.1L of air
+* {configuration base path}/{sensor ID}/raw/1.0 - Number of particles bigger than 1.0um in 0.1L of air
+* {configuration base path}/{sensor ID}/raw/2.5 - Number of particles bigger than 2.5um in 0.1L of air
+* {configuration base path}/{sensor ID}/standard/pm1.0 - PM1.0 concentration (ug/m3) for standard particle
+* {configuration base path}/{sensor ID}/standard/pm2.5 - PM2.5 concentration (ug/m3) for standard particle
+* {configuration base path}/{sensor ID}/standard/pm10.0 - PM10.0 concentration (ug/m3) for standard particle
+* {configuration base path}/{sensor ID}/atmospheric/pm1.0 - PM1.0 concentration (ug/m3) for atmospheric environment
+* {configuration base path}/{sensor ID}/atmospheric/pm2.5 - PM2.5 concentration (ug/m3) for atmospheric environment
+* {configuration base path}/{sensor ID}/atmospheric/pm10.0 - PM10.0 concentration (ug/m3) for atmospheric environment
